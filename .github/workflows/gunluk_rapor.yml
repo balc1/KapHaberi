@@ -1,0 +1,34 @@
+name: Borsa Raporlayıcı
+
+on:
+  schedule:
+    # UTC Saatiyle çalışır. Türkiye (UTC+3) 18:30 için buraya 15:30 yazıyoruz.
+    - cron: '30 15 * * *'
+  workflow_dispatch: # Bu satır, GitHub'da "Run Workflow" butonu ekler (test etmek için)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Kodları Çek
+        uses: actions/checkout@v3
+
+      - name: Python Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Kütüphaneleri Yükle
+        run: |
+          pip install -r requirements.txt
+
+      - name: Botu Çalıştır
+        env:
+          # Burası KASADAKİ şifreleri koda aktarır
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MAIL_ADDRESS: ${{ secrets.MAIL_ADDRESS }}
+          MAIL_APP_PASSWORD: ${{ secrets.MAIL_APP_PASSWORD }}
+          RECEIVER_MAIL: ${{ secrets.RECEIVER_MAIL }}
+          # Eğer RESEND kullanacaksan onun keyini de buraya ekle
+        run: python main.py

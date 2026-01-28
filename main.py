@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 try:
     from veri_cekme import gun_sonu_verisi_topla
     from analiz import llm_response
-    from mail_servisi import mail_gonder
+    from telegram_servisi import telegram_gonder
 except ImportError as e:
     print(f"KRİTİK HATA: Modüller bulunamadı! Dosya adlarını kontrol et.\nHata: {e}")
     sys.exit(1)
@@ -70,19 +70,21 @@ def akis_baslat():
         return
 
     # --- ADIM 3: E-POSTA GÖNDERİMİ ---
-    print("\n[ADIM 3/3] Rapor Gönderiliyor...")
+    # --- ADIM 3: TELEGRAM GÖNDERİMİ ---
+    print("\n[ADIM 3/3] Rapor Telegram'a Gönderiliyor...")
     try:
-        konu_basligi = f"📅 Borsa Gün Sonu Raporu | {bugun_str}"
+        konu_basligi = f"Borsa Gün Sonu Raporu | {bugun_str}"
         
-        basari = mail_gonder(konu_basligi, rapor_metni)
+        # Fonksiyonu çağır
+        basari = telegram_gonder(konu_basligi, rapor_metni)
         
         if basari:
-            print(f"✅ E-posta başarıyla gönderildi: {konu_basligi}")
+            print(f"✅ Rapor Telegram'dan iletildi.")
         else:
-            print("❌ E-posta gönderilemedi (Mail servisi hatası).")
+            print("❌ Telegram gönderimi başarısız.")
 
     except Exception as e:
-        print(f"❌ HATA (Mail): {e}")
+        print(f"❌ HATA (Telegram): {e}")
 
     # --- BİTİŞ ---
     gecen_sure = datetime.now() - baslangic_zamani

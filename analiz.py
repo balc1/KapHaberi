@@ -1,7 +1,7 @@
 import json
 import os
 from langchain_groq import ChatGroq
-from langchain.schema import HumanMessage, SystemMessage
+# from langchain.schema import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 
 # .env dosyasını yükler (API KEY buradan gelir)

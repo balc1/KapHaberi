@@ -1,93 +1,165 @@
 import json
 import os
+import time
 from langchain_groq import ChatGroq
-# from langchain.schema import HumanMessage, SystemMessage
-from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, SystemMessage
 
-# .env dosyasını yükler (API KEY buradan gelir)
-load_dotenv()
-
-# --- LLM FONKSİYONU ---
-# Bu fonksiyon artık dışarıdan 'json_input_str' adında veri bekliyor
-def llm_response(json_input_str):
-    
-    # SYSTEM PROMPT (Senin yazdığın harika prompt)
-    system_prompt = """
-    Sen Borsa İstanbul konusunda uzman, kıdemli bir Finansal Analistsin. 
-    Görevin: Sana JSON formatında verilen KAP bildirimlerini analiz etmek ve yatırımcı için bir 'Gün Sonu Raporu' hazırlamak.
-
-    Aşağıdaki KURALLARA sıkı sıkıya uy:
-
-    1. **FİLTRELEME (ÖNEMLİ vs ÖNEMSİZ):**
-       - **ÖNEMLİ:** Sermaye Artırımı, Temettü, Yeni İş İlişkisi (İhale/Sipariş), Birleşme/Devralma, Geri Alım (Buyback), Büyük Duran Varlık Satışı, Finansal Duran Varlık Edinimi.
-       - **ÖNEMSİZ (YAZMA):** Devre Kesici, Volatilite Bazlı Tedbir, Fon İşlemleri, Rutin Genel Kurul Kayıtları, SGK/Vergi Borcu Yoktur yazıları, Sermaye Piyasası Aracı İhracı (Tahvil/Bono satışı - hisse senedi değilse), Personel atamaları (CEO değilse).
-
-    2. **ÖZETLEME FORMATI:**
-       - Sadece "ÖNEMLİ" kategorisine girenleri raporla.
-       - Her şirket için madde işareti kullan.
-       - Şirket Kodu ve Adını Kalın Yaz.
-       - Bildirimi 1-2 cümle ile, yatırımcı gözüyle özetle. (Örn: "Şirket, 50 Milyon TL değerinde yeni bir güneş enerjisi ihalesi kazandı. Ciroya etkisi %5 olacak.")
-       - Asla JSON formatında cevap verme, okunabilir bir Rapor metni yaz.
-
-    3. **TON:**
-       - Profesyonel, net ve kısa.
-
-    Eğer hiç önemli haber yoksa "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir." yaz.
+def llm_response(veriler_listesi):
     """
+    KAP verilerini GÜVENLİ LİMİTLERLE analiz eder.
+    Limit aşımı (413 Hatası) olmaması için sıkı önlemler alınmıştır.
+    """
+    
+    # --- KRİTİK AYARLAR ---
+    PARCA_BOYUTU = 10   # Güvenli limit
+    BEKLEME_SURESI = 65 # Groq limiti için bekleme
+    KARAKTER_LIMITI = 350 # Token şişmemesi için kırpma
+    
+    # --- HATA DÜZELTİCİ (YENİ) ---
+    # Eğer veri string olarak geldiyse, listeye çevir
+    if isinstance(veriler_listesi, str):
+        try:
+            print("⚠️ Uyarı: Gelen veri metin formatında, listeye çevriliyor...")
+            veriler_listesi = json.loads(veriler_listesi)
+        except Exception as e:
+            return f"KRİTİK HATA: Veri formatı bozuk, düzeltilemedi. Detay: {e}"
+
+    # Hala liste değilse hata ver
+    if not isinstance(veriler_listesi, list):
+         return f"KRİTİK HATA: Veri beklenen formatta değil. Gelen tip: {type(veriler_listesi)}"
+    
+    api_key = os.getenv("GROQ_API_KEY")
+    # Test yaparken .env yüklenmediyse diye basit bir kontrol
+    if not api_key:
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            api_key = os.getenv("GROQ_API_KEY")
+        except:
+            pass
+        
+    if not api_key:
+        return "HATA: GROQ_API_KEY bulunamadı! .env dosyasını kontrol et."
 
     llm = ChatGroq(
-        groq_api_key=os.getenv("GROQ_API_KEY"),
+        groq_api_key=api_key,
         model_name="llama-3.3-70b-versatile",
         temperature=0.3,
-        top_p=0.9,
-        max_tokens=10000
+        max_retries=3
     )
 
-    # MESAJLARI OLUŞTURUYORUZ
-    # System: Kuralları veriyoruz
-    # Human: Okuduğumuz JSON verisini veriyoruz
-    messages = [
-        ("system", system_prompt),
-        ("human", f"İşte bugünün KAP verileri, bunları analiz et: {json_input_str}"),
-    ]
+    system_prompt = """
+    Sen Kıdemli Finansal Analistsin. Verilen KAP listesini analiz et.
     
-    # Modele gönder ve cevabı al
-    response = llm.invoke(messages)
-    return response.content
+    KURALLAR:
+    1. SADECE: Sermaye Artırımı, Temettü, Yeni İş, İhale, Satın Alma, Değerleme Raporu haberlerini yaz.
+    2. YAZMA: Devre kesici, Fon işlemleri, Rutin bildirimler, Borçlanma aracı ihracı.
+    3. FORMAT:
+       • ŞİRKET (KOD): Haber özeti (tek cümle).
+    4. Grupta önemli haber yoksa sadece "YOK" yaz.
+    """
 
-# --- ANA ÇALIŞMA ALANI ---
-if __name__ == "__main__":
+    toplam_veri = len(veriler_listesi)
+    print(f"📊 Toplam {toplam_veri} bildirim var. {PARCA_BOYUTU}'arlı paketler halinde işlenecek.")
     
-    # 1. JSON DOSYASINI OKU
-    # Not: Dosya adı her gün değişeceği için burayı dinamik yapabiliriz ileride.
-    dosya_adi = "kap_verileri_28_01_2026.json" 
+    final_rapor = ""
+    
+    for i in range(0, toplam_veri, PARCA_BOYUTU):
+        grup_ham = veriler_listesi[i : i + PARCA_BOYUTU]
+        grup_no = (i // PARCA_BOYUTU) + 1
+        toplam_grup = (toplam_veri // PARCA_BOYUTU) + 1 if (toplam_veri % PARCA_BOYUTU) != 0 else (toplam_veri // PARCA_BOYUTU)
+        
+        print(f"⏳ Paket {grup_no}/{toplam_grup} hazırlanıyor...")
+        
+        # --- TOKEN OPTİMİZASYONU ---
+        grup_metin = ""
+        for veri in grup_ham:
+            # Veri yapısı kontrolü (Test dosyasında 'icerik' olmayabilir diye)
+            if isinstance(veri, str): # Eğer liste içinde string varsa onu da atla
+                continue
+                
+            icerik = veri.get('icerik', '') or veri.get('summary', '') or "İçerik Yok"
+            sirket = veri.get('sirket', 'Bilinmiyor')
+            baslik = veri.get('baslik', 'Konu Yok')
+
+            temiz_icerik = str(icerik).replace('\n', ' ')[:KARAKTER_LIMITI]
+            grup_metin += f"KOD:{sirket} | KONU:{baslik} | DETAY:{temiz_icerik}\n"
+
+        messages = [
+            ("system", system_prompt),
+            ("human", f"LİSTE:\n{grup_metin}"),
+        ]
+        
+        try:
+            print(f"📡 Paket {grup_no} Groq'a gönderiliyor...")
+            cevap = llm.invoke(messages).content
+            
+            if "YOK" not in cevap and len(cevap) > 5:
+                final_rapor += cevap + "\n\n"
+                print(f"✅ Paket {grup_no}: Veri alındı.")
+            else:
+                print(f"ℹ️ Paket {grup_no}: Önemli haber yok.")
+                
+        except Exception as e:
+            print(f"⚠️ Paket {grup_no} Hatası: {e}")
+        
+        # Son grup değilse bekle
+        if i + PARCA_BOYUTU < toplam_veri:
+            print(f"☕ Kota sıfırlanıyor... {BEKLEME_SURESI} saniye beklenecek.")
+            time.sleep(BEKLEME_SURESI)
+
+    if not final_rapor.strip():
+        return "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir."
+    
+    return final_rapor
+
+# ==========================================
+# TEST BLOĞU
+# ==========================================
+if __name__ == "__main__":
+    print("\n🔬 TEST MODU BAŞLATILIYOR...")
+    
+    TEST_DOSYASI = "kap_verileri_28_01_2026.json" 
     
     try:
-        print(f"'{dosya_adi}' okunuyor...")
-        with open(dosya_adi, "r", encoding="utf-8") as f:
-            ham_veri = json.load(f)
+        # Dosya yoksa otomatik bul
+        if not os.path.exists(TEST_DOSYASI):
+            json_files = [f for f in os.listdir('.') if f.endswith('.json') and 'kap' in f]
+            if json_files:
+                TEST_DOSYASI = json_files[0]
+                print(f"⚠️ Dosya otomatik seçildi: '{TEST_DOSYASI}'")
+            else:
+                print("❌ HATA: Test edecek .json dosyası bulunamadı!")
+                exit()
+
+        print(f"📂 '{TEST_DOSYASI}' okunuyor...")
         
-        # 2. VERİYİ STRING FORMATINA ÇEVİR (LLM JSON objesi okumaz, yazı okur)
-        # ensure_ascii=False çok önemli, yoksa Türkçe karakterler bozuk gider.
-        user_message_str = json.dumps(ham_veri, ensure_ascii=False)
-
-        print("Groq Analiz Ediyor... (Lütfen bekleyin)")
-
-        # 3. FONKSİYONA VERİYİ GÖNDER
-        analiz_sonucu = llm_response(user_message_str)
-
-        # 4. SONUCU YAZDIR
+        with open(TEST_DOSYASI, "r", encoding="utf-8") as f:
+            dosya_icerigi = f.read() # Önce hepsini metin olarak oku
+            
+        # JSON'a çevirmeyi dene
+        try:
+            test_verisi = json.loads(dosya_icerigi)
+            
+            # Bazen JSON string içinde string olabilir (Double encoded)
+            if isinstance(test_verisi, str):
+                print("⚠️ Çift katmanlı JSON tespit edildi, tekrar çözülüyor...")
+                test_verisi = json.loads(test_verisi)
+                
+        except json.JSONDecodeError:
+            print("❌ HATA: Dosya geçerli bir JSON değil!")
+            exit()
+            
+        print(f"✅ Dosya başarıyla işlendi. {len(test_verisi)} adet bildirim var.")
+        
+        # Fonksiyonu çalıştır
+        sonuc = llm_response(test_verisi)
+        
         print("\n" + "="*40)
-        print("GÜN SONU FİNANSAL RAPORU")
+        print("🧪 TEST SONUCU (RAPOR):")
         print("="*40)
-        print(analiz_sonucu)
-
-        # 5. RAPORU KAYDET
-        with open("GUN_SONU_RAPORU.txt", "w", encoding="utf-8") as f:
-            f.write(analiz_sonucu)
-            print("\nRapor 'GUN_SONU_RAPORU.txt' dosyasına kaydedildi.")
-
-    except FileNotFoundError:
-        print(f"HATA: '{dosya_adi}' bulunamadı. Lütfen önce veri çekme kodunu çalıştırın.")
+        print(sonuc)
+        print("="*40)
+        
     except Exception as e:
-        print(f"Beklenmeyen bir hata oluştu: {e}")
+        print(f"❌ TEST HATASI DETAYI: {e}")

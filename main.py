@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Eğer dosya adların farklıysa buradaki isimleri değiştirmen gerekir.
 try:
     from veri_cekme import gun_sonu_verisi_topla
-    from analiz import llm_response
+    from analiz2 import llm_response
     from telegram_servisi import telegram_gonder
 except ImportError as e:
     print(f"KRİTİK HATA: Modüller bulunamadı! Dosya adlarını kontrol et.\nHata: {e}")
@@ -50,9 +50,9 @@ def akis_baslat():
     print("\n[ADIM 2/3] Yapay Zeka Analizi Başlıyor...")
     try:
         # LLM'e göndermek için JSON stringine çevir
-        json_input = json.dumps(veriler, ensure_ascii=False)
+        #json_input = json.dumps(veriler, ensure_ascii=False)
         
-        rapor_metni = llm_response(json_input)
+        rapor_metni = llm_response(veriler)
         
         if not rapor_metni:
             print("❌ HATA: LLM boş cevap döndü.")

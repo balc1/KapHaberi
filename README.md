@@ -86,7 +86,7 @@ PASIFIK: Tahsisli sermaye artırımı SPK tarafından onaylandı.
 
 (Rutin bildirimler ve devre kesiciler Yapay Zeka tarafından elenmiştir.)
 
-##🛠️ Tech Stack & Tools
+## 🛠️ Tech Stack & Tools
 Language: Python 3.10+
 
 LLM Framework: LangChain (langchain-core, langchain-groq)

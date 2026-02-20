@@ -47,22 +47,6 @@ graph TD
     K --> B
     end
 ```
-## 📂 Project Structure
-
-KapHaberi/
-│
-├── src/                    # Source code
-│   ├── __init__.py         
-│   ├── main.py             # Orchestrator tying modules together
-│   ├── scraper.py          # OOP module for web scraping & data extraction
-│   ├── analyzer.py         # 2-stage LLM processing logic (LangChain)
-│   ├── notifier.py         # Telegram API integration with retry mechanisms
-│   └── logger.py           # Standardized application logging
-│
-├── logs/                   # System execution logs (ignored in Git)
-├── requirements.txt        # Dependencies
-├── .env.example            # Environment variables template
-└── README.md               # Project documentation
 
 ## 🚀 Setup & Installation
 

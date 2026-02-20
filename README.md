@@ -46,3 +46,82 @@ graph TD
     J((Cron Job 18:30)) -->|Triggers| K[src/main.py Orchestrator]
     K --> B
     end
+```
+## 📂 Project Structure
+
+KapHaberi/
+│
+├── src/                    # Source code
+│   ├── __init__.py         
+│   ├── main.py             # Orchestrator tying modules together
+│   ├── scraper.py          # OOP module for web scraping & data extraction
+│   ├── analyzer.py         # 2-stage LLM processing logic (LangChain)
+│   ├── notifier.py         # Telegram API integration with retry mechanisms
+│   └── logger.py           # Standardized application logging
+│
+├── logs/                   # System execution logs (ignored in Git)
+├── requirements.txt        # Dependencies
+├── .env.example            # Environment variables template
+└── README.md               # Project documentation
+
+## 🚀 Setup & Installation
+
+1. Clone the Repository
+    git clone [https://github.com/YOUR_USERNAME/KapHaberi.git](https://github.com/YOUR_USERNAME/KapHaberi.git)
+    cd KapHaberi
+
+2. Install Dependencies
+    pip install -r requirements.txt
+
+3. Environment Variables
+Create a .env file in the root directory and add your API keys:
+
+GROQ_API_KEY=gsk_your_groq_api_key
+TELEGRAM_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=@your_channel_name   
+
+4. Run Locally
+    python src/main.py
+
+## 📊 Example Output (Telegram)
+The bot outputs a beautifully formatted, categorized daily summary:
+
+📢 Borsa Gün Sonu Raporu | 28.01.2026
+
+💼 YENİ İŞ & İHALELER
+
+ASELS: Savunma Sanayii Başkanlığı ile 50 Milyon USD tutarında yeni bir elektronik harp sistemi sözleşmesi imzalandı.
+
+KONTR: Enerji altyapı ihalesi kazanıldı, ciroya olumlu etkisi bekleniyor.
+
+💰 SERMAYE & TEMETTÜ
+
+THYAO: 2025 yılı kârından hisse başına 2.5 TL temettü dağıtma kararı alındı.
+
+PASIFIK: Tahsisli sermaye artırımı SPK tarafından onaylandı.
+
+(Rutin bildirimler ve devre kesiciler Yapay Zeka tarafından elenmiştir.)
+
+##🛠️ Tech Stack & Tools
+Language: Python 3.10+
+
+LLM Framework: LangChain (langchain-core, langchain-groq)
+
+Models: Meta Llama 3.3 70B Versatile (via Groq Cloud)
+
+Data Extraction: BeautifulSoup4, Requests, Regex
+
+Automation: GitHub Actions, Make.com (for On-Demand Webhooks)
+
+Type Hinting: Strictly typed for enterprise readiness.
+
+## 👨‍💻 About the Developer
+I am a Freelance AI Engineer & Full-Stack Developer | Intelligent Apps • AI Agents • Data specializing in building scalable AI architectures, advanced agent systems, and automated data pipelines.
+
+Let's connect: [LinkedIn Profile URL]
+
+Hire me on Upwork: [Upwork Profile URL]
+
+Portfolio: [Your Personal Website URL]
+
+If you found this project interesting or helpful, please consider giving it a ⭐!   

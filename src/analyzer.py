@@ -6,30 +6,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 def llm_response(veriler_listesi):
     """
-    KAP verilerini GÜVENLİ LİMİTLERLE analiz eder.
-    Limit aşımı (413 Hatası) olmaması için sıkı önlemler alınmıştır.
+    İKİ AŞAMALI ANALİZ:
+    1. AŞAMA (MADENCİ): Verileri parçalar halinde tarar, sadece önemli ham bilgiyi çıkarır.
+    2. AŞAMA (EDİTÖR): Çıkarılan ham bilgileri birleştirip profesyonel bülten yazar.
     """
     
-    # --- KRİTİK AYARLAR ---
-    PARCA_BOYUTU = 10   # Güvenli limit
-    BEKLEME_SURESI = 65 # Groq limiti için bekleme
-    KARAKTER_LIMITI = 350 # Token şişmemesi için kırpma
+    # --- AYARLAR ---
+    PARCA_BOYUTU = 10   # Güvenli limit (Hata almamak için)
+    BEKLEME_SURESI = 60 # Saniye
+    KARAKTER_LIMITI = 350
     
-    # --- HATA DÜZELTİCİ (YENİ) ---
-    # Eğer veri string olarak geldiyse, listeye çevir
-    if isinstance(veriler_listesi, str):
-        try:
-            print("⚠️ Uyarı: Gelen veri metin formatında, listeye çevriliyor...")
-            veriler_listesi = json.loads(veriler_listesi)
-        except Exception as e:
-            return f"KRİTİK HATA: Veri formatı bozuk, düzeltilemedi. Detay: {e}"
-
-    # Hala liste değilse hata ver
-    if not isinstance(veriler_listesi, list):
-         return f"KRİTİK HATA: Veri beklenen formatta değil. Gelen tip: {type(veriler_listesi)}"
-    
+    # --- ENV KONTROL ---
     api_key = os.getenv("GROQ_API_KEY")
-    # Test yaparken .env yüklenmediyse diye basit bir kontrol
     if not api_key:
         try:
             from dotenv import load_dotenv
@@ -37,123 +25,131 @@ def llm_response(veriler_listesi):
             api_key = os.getenv("GROQ_API_KEY")
         except:
             pass
-        
+    
     if not api_key:
-        return "HATA: GROQ_API_KEY bulunamadı! .env dosyasını kontrol et."
+        return "HATA: GROQ_API_KEY bulunamadı!"
 
+    # --- MODEL ---
     llm = ChatGroq(
         groq_api_key=api_key,
         model_name="llama-3.3-70b-versatile",
-        temperature=0.3,
+        temperature=0.3, 
         max_retries=3
     )
 
-    system_prompt = """
-    Sen profesyonel bir Borsa İstanbul (BIST) analisti ve portföy yöneticisisin.
-Amacın KAP bildirimlerinden yatırımcı açısından ANLAMLI ve POZİTİF ETKİ POTANSİYELİ olan haberleri ayıklayıp DERLİ TOPLU sunmaktır.
-
-GENEL KURALLAR:
-- Parça parça gelen bildirimleri TEK BÜTÜN halinde değerlendir.
-- Aynı tür haberleri mutlaka BİRLEŞTİR.
-- Gereksiz, rutin, piyasa etkisi olmayan bildirimleri TAMAMEN ELE.
-- Yorum ekleme, spekülasyon yapma, sadece haberin yatırımcı açısından neden önemli olduğunu ima et.
-
-SADECE ŞU HABER TÜRLERİNİ KULLAN:
-✓ Yeni iş sözleşmeleri / stratejik anlaşmalar  
-✓ İhale kazanımı  
-✓ Satın alma / birleşme  
-✓ Sermaye artırımı (bedelli / bedelsiz)  
-✓ Temettü kararları  
-✓ Değerleme raporu / varlık değer artışı  
-
-KESİNLİKLE YAZMA:
-✗ Devre kesici  
-✗ Rutin yönetim kurulu kararları  
-✗ Borçlanma aracı ihracı  
-✗ Fon işlemleri  
-✗ Düzeltme ve tekrar bildirimleri  
-
-FORMAT KURALLARI (ÇOK ÖNEMLİ):
-
-1️⃣ BAŞLIK KULLAN:
-Aşağıdaki başlıklardan SADECE gerekli olanları yaz:
-
-🔹 YENİ İŞ VE STRATEJİK ANLAŞMALAR  
-🔹 SERMAYE ARTIRIMI VE TEMETTÜ HABERLERİ  
-🔹 SATIN ALMA VE DEĞERLEME GELİŞMELERİ  
-
-2️⃣ HER BAŞLIK ALTINDA:
-- Tüm ilgili şirketleri TEK PARAGRAF halinde anlat
-- Akıcı, okunabilir, yatırımcı dilinde yaz
-- Şirketleri parantez içinde KOD ile belirt
-- Madde işareti kullanma
-
-3️⃣ YATIRIMCI FİLTRESİ:
-- Hisse fiyatına POZİTİF etki yapma potansiyeli olanları ÖNCELİKLENDİR
-- Önemsiz büyüklükte veya etkisiz anlaşmaları ELE
-
-4️⃣ HİÇ ÖNEMLİ HABER YOKSA:
-SADECE ŞUNU YAZ:
-"Bugün yatırımcı açısından anlamlı bir KAP bildirimi bulunmamaktadır."
-
-Özellikle ciroya, kârlılığa veya büyümeye doğrudan katkı sağlayan haberleri önceliklendir.
-Sadece "var" diye haber yazma; ETKİSİ YOKSA ELE.
-
+    # =================================================================
+    # 1. AŞAMA: MADENCİ (VERİ ÇIKARTMA)
+    # =================================================================
+    
+    madenci_prompt = """
+    Sen bir Veri Madencisisin. Görevin, verilen KAP bildirimleri arasından sadece kritik olanları ayıklamak.
+    
+    KURALLAR:
+    1. SADECE şu konuları al: Sermaye Artırımı, Temettü, İhale/Yeni İş, Birleşme/Devralma, Geri Alım, Büyük Varlık Satışı.
+    2. YAZMA: Devre kesici, Fon işlemleri, Rutin bildirimler, Borçlanma aracı, Cevaplamalar.
+    3. ÇIKTI FORMATI: Sadece ham veri ver. Süsleme yapma, başlık atma.
+       Örnek Satır: [ŞİRKET KODU] | [KONU TÜRÜ] | [DETAY]
+    4. Eğer grupta hiç önemli haber yoksa SADECE "YOK" yaz. Başka bir şey yazma.
     """
 
+    # Veri formatı kontrolü (String geldiyse listeye çevir)
+    if isinstance(veriler_listesi, str):
+        try:
+            veriler_listesi = json.loads(veriler_listesi)
+            if isinstance(veriler_listesi, str): # Çift katmanlıysa bir daha
+                veriler_listesi = json.loads(veriler_listesi)
+        except:
+            return "Veri formatı hatası."
+
     toplam_veri = len(veriler_listesi)
-    print(f"📊 Toplam {toplam_veri} bildirim var. {PARCA_BOYUTU}'arlı paketler halinde işlenecek.")
+    print(f"📊 Toplam {toplam_veri} bildirim taranıyor... (Madenci İş Başında)")
     
-    final_rapor = ""
+    ham_bulgular_listesi = [] # Madencinin bulduğu altınları buraya atacağız
     
     for i in range(0, toplam_veri, PARCA_BOYUTU):
         grup_ham = veriler_listesi[i : i + PARCA_BOYUTU]
         grup_no = (i // PARCA_BOYUTU) + 1
-        toplam_grup = (toplam_veri // PARCA_BOYUTU) + 1 if (toplam_veri % PARCA_BOYUTU) != 0 else (toplam_veri // PARCA_BOYUTU)
         
-        print(f"⏳ Paket {grup_no}/{toplam_grup} hazırlanıyor...")
-        
-        # --- TOKEN OPTİMİZASYONU ---
+        # Token tasarrufu için metin hazırlığı
         grup_metin = ""
         for veri in grup_ham:
-            # Veri yapısı kontrolü (Test dosyasında 'icerik' olmayabilir diye)
-            if isinstance(veri, str): # Eğer liste içinde string varsa onu da atla
-                continue
-                
-            icerik = veri.get('icerik', '') or veri.get('summary', '') or "İçerik Yok"
-            sirket = veri.get('sirket', 'Bilinmiyor')
-            baslik = veri.get('baslik', 'Konu Yok')
-
+            if isinstance(veri, str): continue
+            
+            icerik = veri.get('icerik', '') or veri.get('summary', '') or ""
+            sirket = veri.get('sirket', '')
+            baslik = veri.get('baslik', '')
+            
             temiz_icerik = str(icerik).replace('\n', ' ')[:KARAKTER_LIMITI]
             grup_metin += f"KOD:{sirket} | KONU:{baslik} | DETAY:{temiz_icerik}\n"
 
         messages = [
-            ("system", system_prompt),
-            ("human", f"LİSTE:\n{grup_metin}"),
+            ("system", madenci_prompt),
+            ("human", f"TARANACAK LİSTE:\n{grup_metin}"),
         ]
         
         try:
-            print(f"📡 Paket {grup_no} Groq'a gönderiliyor...")
+            print(f"⛏️  Parça {grup_no} taranıyor...")
             cevap = llm.invoke(messages).content
             
-            if "YOK" not in cevap and len(cevap) > 5:
-                final_rapor += cevap + "\n\n"
-                print(f"✅ Paket {grup_no}: Veri alındı.")
+            # Eğer madenci "YOK" demediyse, bulduklarını listeye ekle
+            if "YOK" not in cevap:
+                ham_bulgular_listesi.append(cevap)
+                print(f"💎 Parça {grup_no}: Önemli bilgi bulundu!")
             else:
-                print(f"ℹ️ Paket {grup_no}: Önemli haber yok.")
+                print(f"System: Parça {grup_no} boş.")
                 
         except Exception as e:
-            print(f"⚠️ Paket {grup_no} Hatası: {e}")
+            print(f"⚠️ Hata (Parça {grup_no}): {e}")
         
-        # Son grup değilse bekle
+        # Son parça değilse bekle
         if i + PARCA_BOYUTU < toplam_veri:
-            print(f"☕ Kota sıfırlanıyor... {BEKLEME_SURESI} saniye beklenecek.")
+            print(f"⏳ Kota dolmaması için {BEKLEME_SURESI}sn bekleniyor...")
             time.sleep(BEKLEME_SURESI)
 
-    if not final_rapor.strip():
-        return "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir."
+    # =================================================================
+    # 2. AŞAMA: EDİTÖR (RAPORLAMA)
+    # =================================================================
     
-    return final_rapor
+    # Eğer hiç bulgu yoksa, boş rapor dön
+    if not ham_bulgular_listesi:
+        return "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir."
+
+    print("\n📝 Editör Modu: Tüm bulgular birleştirilip raporlanıyor...")
+    
+    # Tüm parça parça bulguları tek bir metin haline getir
+    tum_ham_metin = "\n".join(ham_bulgular_listesi)
+    
+    editor_prompt = """
+    Sen Borsa İstanbul konusunda uzman bir Bülten Editörüsün.
+    Elinde, gün içinde toplanmış dağınık haber notları var.
+    
+    GÖREVİN:
+    Bu dağınık notları birleştirerek tek, akıcı, profesyonel bir "Gün Sonu Raporu" yazmak.
+    
+    KURALLAR:
+    1. AYNI ŞİRKETLE İLGİLİ HABERLERİ BİRLEŞTİR: Aynı şirketin birden fazla haberi varsa alt alta yazma, tek maddede özetle.
+    2. KATEGORİLERE AYIR: 
+       - 💼 YENİ İŞ & İHALELER
+       - 💰 SERMAYE & TEMETTÜ
+       - 🤝 BİRLEŞME & SATIN ALMA
+       - 🏭 YATIRIM & AR-GE
+       (Hangi kategoriye uyuyorsa oraya koy)
+    3. EMOJİ KULLAN: Başlıklarda ve maddelerde uygun emojiler kullan.
+    4. TEKRAR ETME: Aynı bilgiyi iki kere yazma.
+    5. GİRİŞ VE ÇIKIŞ METNİ YAZMA: "Merhaba işte rapor", "Saygılar" gibi şeyler yazma. Direkt raporu ver.
+    6. Şirket Kodlarını (THYAO vb.) KALIN yaz.
+    """
+    
+    messages_editor = [
+        ("system", editor_prompt),
+        ("human", f"İŞTE GÜNÜN DAĞINIK NOTLARI:\n{tum_ham_metin}"),
+    ]
+    
+    try:
+        final_rapor = llm.invoke(messages_editor).content
+        return final_rapor
+    except Exception as e:
+        return f"HATA (Editör Aşaması): {e}\n\nAMA İŞTE HAM VERİLER:\n{tum_ham_metin}"
 
 # ==========================================
 # TEST BLOĞU

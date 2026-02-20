@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 # --- MODÜLLERİ İÇE AKTAR ---
 # Eğer dosya adların farklıysa buradaki isimleri değiştirmen gerekir.
 try:
-    from veri_cekme import gun_sonu_verisi_topla
-    from analiz import llm_response
-    from telegram_servisi import telegram_gonder
+    from src.scraper import gun_sonu_verisi_topla
+    from src.analyzer import llm_response
+    from src.notifier import telegram_gonder
 except ImportError as e:
     print(f"KRİTİK HATA: Modüller bulunamadı! Dosya adlarını kontrol et.\nHata: {e}")
     sys.exit(1)

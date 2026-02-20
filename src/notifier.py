@@ -1,62 +1,64 @@
 import requests
 import os
 import time
+from typing import Optional
 
-def telegram_gonder(baslik, mesaj_metni):
-    """
-    Raporu Telegram üzerinden (Kişiye veya Kanala) gönderir.
-    Mesaj 4096 karakterden uzunsa otomatik böler.
-    """
-    token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID") # Artık buraya @kanal_adi gelecek
-    
-    if not token or not chat_id:
-        print("❌ HATA: Telegram Token veya Chat ID eksik!")
-        return False
+from src.logger import setup_logger
 
-    # Başlık ve metni birleştir
-    tam_mesaj = f"📢 *{baslik}*\n\n{mesaj_metni}"
-    
-    # Telegram mesaj limiti (Güvenlik payı ile 4000)
-    limit = 4000
-    parcalar = [tam_mesaj[i:i+limit] for i in range(0, len(tam_mesaj), limit)]
-    
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    
-    basari_durumu = True
+logger = setup_logger("TelegramNotifier")
 
-    print(f"📨 Mesaj '{chat_id}' hedefine gönderiliyor...")
-
-    for parca in parcalar:
-        # Önce Markdown (Kalın/İtalik) ile göndermeyi dene
-        payload = {
-            "chat_id": chat_id,
-            "text": parca,
-            "parse_mode": "Markdown" 
-        }
+class TelegramNotifier:
+    """Telegram üzerinden raporları ileten bildirim sınıfı."""
+    
+    def __init__(self):
+        self.token = os.getenv("TELEGRAM_TOKEN")
+        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        self.api_url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         
-        try:
-            response = requests.post(url, data=payload)
-            
-            # Eğer Markdown hatası verirse (Örn: metin içinde * veya _ varsa)
-            # Düz metin olarak tekrar dene
-            if response.status_code != 200:
-                print(f"⚠️ Markdown hatası, düz metin deneniyor... (Hata: {response.text})")
-                payload.pop("parse_mode") # Formatı iptal et
-                retry_response = requests.post(url, data=payload)
-                
-                if retry_response.status_code == 200:
-                    print("✅ Düz metin olarak gönderildi.")
-                else:
-                    print(f"❌ Gönderim Başarısız: {retry_response.text}")
-                    basari_durumu = False
-            else:
-                print("✅ Mesaj başarıyla iletildi.")
+        if not self.token or not self.chat_id:
+            logger.error("TELEGRAM_TOKEN veya TELEGRAM_CHAT_ID bulunamadı!")
+            raise ValueError("Telegram kimlik bilgileri eksik.")
+        
+        logger.info("TelegramNotifier başlatıldı.")
 
-            time.sleep(1) # Spam koruması için bekle
+    def send(self, baslik: str, mesaj_metni: str) -> bool:
+        """Mesajı gerektiğinde parçalara bölerek Telegram'a gönderir."""
+        tam_mesaj = f"📢 *{baslik}*\n\n{mesaj_metni}"
+        limit = 4000
+        
+        # Mesajı chunk'lara (parçalara) ayır
+        parcalar = [tam_mesaj[i:i+limit] for i in range(0, len(tam_mesaj), limit)]
+        basari_durumu = True
+
+        logger.info(f"Rapor {len(parcalar)} parça halinde '{self.chat_id}' hedefine gönderiliyor...")
+
+        for parca in parcalar:
+            payload = {
+                "chat_id": self.chat_id,
+                "text": parca,
+                "parse_mode": "Markdown" 
+            }
             
-        except Exception as e:
-            print(f"❌ Bağlantı Hatası: {e}")
-            basari_durumu = False
+            try:
+                response = requests.post(self.api_url, data=payload, timeout=10)
+                
+                # Eğer Markdown hatası verirse düz metin (Plain Text) olarak tekrar dene
+                if response.status_code != 200:
+                    logger.warning(f"Markdown hatası, düz metin deneniyor... Hata: {response.text}")
+                    payload.pop("parse_mode")
+                    retry_response = requests.post(self.api_url, data=payload, timeout=10)
+                    
+                    if retry_response.status_code != 200:
+                        logger.error(f"Gönderim tamamen başarısız: {retry_response.text}")
+                        basari_durumu = False
+                
+                time.sleep(1) # Spam koruması
+                
+            except requests.RequestException as e:
+                logger.error(f"Telegram ağ bağlantısı hatası: {e}")
+                basari_durumu = False
+                
+        if basari_durumu:
+            logger.info("✅ Rapor Telegram'a başarıyla iletildi.")
             
-    return basari_durumu
+        return basari_durumu

@@ -1,38 +1,135 @@
-# 📈 KAP AI Analyst: Borsa İstanbul Akıllı Asistanı
+# 📈 KAP AI Analyst: Enterprise-Grade Financial Intelligence Bot
 
-![Python](https://img.shields.io/badge/Python-3.10-blue?style=for-the-badge&logo=python)
-![Groq](https://img.shields.io/badge/AI-Llama3.3-orange?style=for-the-badge)
-![GitHub Actions](https://img.shields.io/badge/Automation-GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions)
-![Telegram](https://img.shields.io/badge/Notification-Telegram-2CA5E0?style=for-the-badge&logo=telegram)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
+![LangChain](https://img.shields.io/badge/LangChain-AI-orange?style=for-the-badge)
+![Groq](https://img.shields.io/badge/LLM-Llama_3.3_70B-black?style=for-the-badge&logo=meta)
+![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions)
+![Telegram](https://img.shields.io/badge/Delivery-Telegram_API-2CA5E0?style=for-the-badge&logo=telegram)
+![Architecture](https://img.shields.io/badge/Architecture-OOP_%7C_Map--Reduce-success?style=for-the-badge)
 
-> **"Bilgi güçtür, ancak filtrelenmiş bilgi kazançtır."**
+> **Automated, AI-driven financial insights delivered directly to your pocket.**
 
-Bu proje, Borsa İstanbul'daki şirketlerin **KAP (Kamuyu Aydınlatma Platformu)** üzerinde yayınladığı yüzlerce bildirimi her gün otomatik olarak tarar, **Yapay Zeka (LLM)** ile analiz eder, önemsizleri eler ve kritik gelişmeleri özetleyerek **Telegram Kanalına** raporlar.
+KAP AI Analyst is a production-ready, serverless automation tool designed to scrape, analyze, and summarize daily disclosures from Borsa Istanbul (KAP). Built with **Object-Oriented Programming (OOP)** principles and a **Map-Reduce LLM architecture**, it filters out market noise and delivers high-value, categorized financial summaries via Telegram.
 
 ---
 
-## 🚀 Projenin Amacı
+## 🌟 Key Features
 
-Borsa yatırımcıları için her gün yüzlerce KAP bildirimi düşer. Bunların %90'ı "Devre Kesici", "Fon İşlemleri" gibi rutin ve fiyata etkisi olmayan bildirimlerdir.
-Bu botun amacı:
-1.  Yatırımcının zaman kaybını önlemek.
-2.  **Sermaye Artırımı, Yeni İş İlişkisi, İhale** gibi kritik haberleri gürültüden ayıklamak.
-3.  Karmaşık finansal dili, herkesin anlayabileceği net bir özete dönüştürmek.
+* **🧠 Advanced AI Engine (Map-Reduce):** Solves LLM token limits and context loss by using a two-stage analysis pipeline. Stage 1 (Miner) extracts raw data in chunks. Stage 2 (Editor) synthesizes it into a cohesive, categorized bulletin.
+* **🏗️ Enterprise Architecture:** Fully modular design (`Scraper`, `Analyzer`, `Notifier`, `Orchestrator`) adhering to SOLID principles.
+* **🛡️ Robust Error Handling & Logging:** Integrated Python `logging` with file and console handlers, ensuring traceability and easy debugging.
+* **⚙️ 100% Serverless & Zero-Cost:** Fully automated via **GitHub Actions** Cron Jobs. No servers to maintain.
+* **📦 Smart Scraping:** Handles complex nested HTML and dynamic JSON payloads to extract data that standard APIs miss.
 
-## 🏗️ Mimari ve Çalışma Mantığı
+---
 
-Bu proje **Serverless (Sunucusuz)** mimari ile tasarlanmıştır ve **0 maliyetle** çalışır.
+## 🏗️ System Architecture
+
+The project is structured into independent modules orchestrated by a central pipeline.
 
 ```mermaid
-graph LR
-A[KAP Web Sitesi] -->|Scraping| B(Veri Toplama Modülü)
-B -->|JSON Veri| C{Yapay Zeka Analizi}
-C -->|Llama-3.3 on Groq| D[Finansal Filtreleme]
-D -->|Özet Rapor| E[Telegram Kanalı]
-subgraph GitHub Actions [Otomasyon - Her Gün 18:30]
-B
-C
-D
-E
-end
+graph TD
+    A[KAP Web API] -->|Scraping & Cleaning| B(src/scraper.py)
+    B -->|Raw Disclosures| C{src/analyzer.py}
+    
+    subgraph AI Pipeline: Map-Reduce
+    C -->|Chunking 10 items/batch| D[Miner LLM]
+    D -->|Extracts Core Events| E[Raw Insights List]
+    E -->|Combine| F[Editor LLM]
+    F -->|Categorize & Format| G[Final Bulletin]
+    end
+    
+    G -->|Markdown Text| H(src/notifier.py)
+    H -->|API Request| I[Telegram Channel]
+    
+    subgraph GitHub Actions: CI/CD
+    J((Cron Job 18:30)) -->|Triggers| K[src/main.py Orchestrator]
+    K --> B
+    end
+
+
+📂 Project Structure
+Plaintext
+KapHaberi/
+│
+├── src/                    # Source code
+│   ├── __init__.py         
+│   ├── main.py             # Orchestrator tying modules together
+│   ├── scraper.py          # OOP module for web scraping & data extraction
+│   ├── analyzer.py         # 2-stage LLM processing logic (LangChain)
+│   ├── notifier.py         # Telegram API integration with retry mechanisms
+│   └── logger.py           # Standardized application logging
+│
+├── logs/                   # System execution logs (ignored in Git)
+├── requirements.txt        # Dependencies
+├── .env.example            # Environment variables template
+└── README.md               # Project documentation
+
+
+🚀 Setup & Installation
+
+1. Clone the Repository
+Bash
+git clone [https://github.com/YOUR_USERNAME/KapHaberi.git](https://github.com/YOUR_USERNAME/KapHaberi.git)
+cd KapHaberi
+
+2. Install Dependencies
+Bash
+pip install -r requirements.txt
+
+3. Environment Variables
+Create a .env file in the root directory and add your API keys:
+
+Kod snippet'i
+GROQ_API_KEY=gsk_your_groq_api_key
+TELEGRAM_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=@your_channel_name
+
+4. Run Locally
+Bash
+python src/main.py
+
+📊 Example Output (Telegram)
+The bot outputs a beautifully formatted, categorized daily summary:
+
+📢 Borsa Gün Sonu Raporu | 28.01.2026
+
+💼 YENİ İŞ & İHALELER
+
+ASELS: Savunma Sanayii Başkanlığı ile 50 Milyon USD tutarında yeni bir elektronik harp sistemi sözleşmesi imzalandı.
+
+KONTR: Enerji altyapı ihalesi kazanıldı, ciroya olumlu etkisi bekleniyor.
+
+💰 SERMAYE & TEMETTÜ
+
+THYAO: 2025 yılı kârından hisse başına 2.5 TL temettü dağıtma kararı alındı.
+
+PASIFIK: Tahsisli sermaye artırımı SPK tarafından onaylandı.
+
+(Rutin bildirimler ve devre kesiciler Yapay Zeka tarafından elenmiştir.)
+
+
+🛠️ Tech Stack & Tools
+Language: Python 3.10+
+
+LLM Framework: LangChain (langchain-core, langchain-groq)
+
+Models: Meta Llama 3.3 70B Versatile (via Groq Cloud)
+
+Data Extraction: BeautifulSoup4, Requests, Regex
+
+Automation: GitHub Actions, Make.com (for On-Demand Webhooks)
+
+Type Hinting: Strictly typed for enterprise readiness.
+
+
+👨‍💻 About the Developer
+I am a Freelance AI Engineer & Full-Stack Developer specializing in building Intelligent Apps, AI Agents, and automated data pipelines.
+
+Let's connect: [LinkedIn Profile URL]
+
+Hire me on Upwork: [Upwork Profile URL]
+
+Portfolio: [Your Personal Website URL]
+
+If you found this project interesting or helpful, please consider giving it a ⭐!

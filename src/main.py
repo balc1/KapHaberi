@@ -1,95 +1,59 @@
 import os
-import json
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
 
-# --- MODÜLLERİ İÇE AKTAR ---
-# Eğer dosya adların farklıysa buradaki isimleri değiştirmen gerekir.
-try:
-    from src.scraper import gun_sonu_verisi_topla
-    from src.analyzer import llm_response
-    from src.notifier import telegram_gonder
-except ImportError as e:
-    print(f"KRİTİK HATA: Modüller bulunamadı! Dosya adlarını kontrol et.\nHata: {e}")
-    sys.exit(1)
+# Proje kök dizinini Python yoluna ekliyoruz ki 'src' klasörünü bulabilsin
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# .env dosyasını yükle
-load_dotenv()
+from src.logger import setup_logger
+from src.scraper import KapScraper
+from src.analyzer import FinancialLLM
+from src.notifier import TelegramNotifier
 
-def akis_baslat():
-    """
-    Bu fonksiyon sırasıyla:
-    1. KAP verisini çeker.
-    2. LLM'e analiz ettirir.
-    3. Sonucu e-posta atar.
-    """
-    baslangic_zamani = datetime.now()
-    bugun_str = baslangic_zamani.strftime("%d.%m.%Y")
+# Ana loglayıcıyı başlat
+logger = setup_logger("Orchestrator")
+
+def main():
+    logger.info("=== KAP AI Analiz Botu Başlatılıyor ===")
     
-    print(f"\n🚀 BORSA BOTU ÇALIŞTIRILIYOR - {bugun_str}")
-    print("="*50)
+    # Çevresel değişkenleri (.env) yükle
+    load_dotenv() 
 
-    # --- ADIM 1: VERİ TOPLAMA ---
-    print("\n[ADIM 1/3] KAP Verileri Çekiliyor...")
     try:
-        veriler = gun_sonu_verisi_topla()
-        
+        # 1. Modülleri Başlat (Sınıflardan nesneler üretiyoruz)
+        scraper = KapScraper()
+        analyzer = FinancialLLM()
+        notifier = TelegramNotifier()
+
+        # 2. Veri Çekme Aşaması
+        veriler = scraper.gunluk_verileri_getir()
         if not veriler:
-            print("⚠️ UYARI: Bugün hiç bildirim yok veya veri çekilemedi. İşlem sonlandırılıyor.")
-            return # E-posta atmadan çık
-            
-        print(f"✅ Başarılı: {len(veriler)} adet ham veri toplandı.")
-        
-    except Exception as e:
-        print(f"❌ HATA (Veri Çekme): {e}")
-        # İstersen buraya hata bildirim maili ekleyebilirsin
-        return
-
-    # --- ADIM 2: ANALİZ (GROQ) ---
-    print("\n[ADIM 2/3] Yapay Zeka Analizi Başlıyor...")
-    try:
-        # LLM'e göndermek için JSON stringine çevir
-        #json_input = json.dumps(veriler, ensure_ascii=False)
-        
-        rapor_metni = llm_response(veriler)
-        
-        if not rapor_metni:
-            print("❌ HATA: LLM boş cevap döndü.")
+            logger.warning("İşlenecek veri bulunamadı. Süreç sonlandırılıyor.")
             return
 
-        print("✅ Analiz tamamlandı.")
-        
-        # (Opsiyonel) Raporu bilgisayara da yedekle
-        yedek_dosya = f"rapor_{baslangic_zamani.strftime('%Y%m%d')}.txt"
-        with open(yedek_dosya, "w", encoding="utf-8") as f:
-            f.write(rapor_metni)
+        # 3. Analiz Aşaması
+        rapor = analyzer.analyze(veriler)
+        if not rapor:
+            logger.warning("Rapor oluşturulamadı. Süreç sonlandırılıyor.")
+            return
 
-    except Exception as e:
-        print(f"❌ HATA (Analiz): {e}")
-        return
-
-    # --- ADIM 3: E-POSTA GÖNDERİMİ ---
-    # --- ADIM 3: TELEGRAM GÖNDERİMİ ---
-    print("\n[ADIM 3/3] Rapor Telegram'a Gönderiliyor...")
-    try:
-        konu_basligi = f"Borsa Gün Sonu Raporu | {bugun_str}"
+        # 4. Bildirim Aşaması
+        bugun_str = datetime.now().strftime("%d.%m.%Y")
+        baslik = f"Borsa Gün Sonu Raporu | {bugun_str}"
         
-        # Fonksiyonu çağır
-        basari = telegram_gonder(konu_basligi, rapor_metni)
+        basari = notifier.send(baslik, rapor)
         
         if basari:
-            print(f"✅ Rapor Telegram'dan iletildi.")
+            logger.info("=== Süreç Başarıyla Tamamlandı ===")
         else:
-            print("❌ Telegram gönderimi başarısız.")
+            logger.error("Süreç tamamlandı ancak bildirim gönderilemedi.")
 
     except Exception as e:
-        print(f"❌ HATA (Telegram): {e}")
-
-    # --- BİTİŞ ---
-    gecen_sure = datetime.now() - baslangic_zamani
-    print("="*50)
-    print(f"🏁 İŞLEM TAMAMLANDI. (Süre: {gecen_sure})")
+        # Beklenmeyen, sistemi çökerten bir hata olursa yakala ve logla
+        logger.critical(f"Sistemde beklenmeyen kritik bir hata oluştu: {e}", exc_info=True)
+        # CI/CD (GitHub Actions) sistemine uygulamanın hata ile kapandığını bildir
+        sys.exit(1) 
 
 if __name__ == "__main__":
-    akis_baslat()
+    main()

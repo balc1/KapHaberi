@@ -1,203 +1,122 @@
 import json
 import os
 import time
+from typing import List, Dict, Optional
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
-def llm_response(veriler_listesi):
-    """
-    İKİ AŞAMALI ANALİZ:
-    1. AŞAMA (MADENCİ): Verileri parçalar halinde tarar, sadece önemli ham bilgiyi çıkarır.
-    2. AŞAMA (EDİTÖR): Çıkarılan ham bilgileri birleştirip profesyonel bülten yazar.
-    """
-    
-    # --- AYARLAR ---
-    PARCA_BOYUTU = 10   # Güvenli limit (Hata almamak için)
-    BEKLEME_SURESI = 60 # Saniye
-    KARAKTER_LIMITI = 350
-    
-    # --- ENV KONTROL ---
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-            api_key = os.getenv("GROQ_API_KEY")
-        except:
-            pass
-    
-    if not api_key:
-        return "HATA: GROQ_API_KEY bulunamadı!"
+from src.logger import setup_logger
 
-    # --- MODEL ---
-    llm = ChatGroq(
-        groq_api_key=api_key,
-        model_name="llama-3.3-70b-versatile",
-        temperature=0.3, 
-        max_retries=3
-    )
+logger = setup_logger("FinancialLLM")
 
-    # =================================================================
-    # 1. AŞAMA: MADENCİ (VERİ ÇIKARTMA)
-    # =================================================================
+class FinancialLLM:
+    """KAP verilerini analiz edip profesyonel bir bülten oluşturan Yapay Zeka sınıfı."""
     
-    madenci_prompt = """
-    Sen bir Veri Madencisisin. Görevin, verilen KAP bildirimleri arasından sadece kritik olanları ayıklamak.
-    
-    KURALLAR:
-    1. SADECE şu konuları al: Sermaye Artırımı, Temettü, İhale/Yeni İş, Birleşme/Devralma, Geri Alım, Büyük Varlık Satışı.
-    2. YAZMA: Devre kesici, Fon işlemleri, Rutin bildirimler, Borçlanma aracı, Cevaplamalar.
-    3. ÇIKTI FORMATI: Sadece ham veri ver. Süsleme yapma, başlık atma.
-       Örnek Satır: [ŞİRKET KODU] | [KONU TÜRÜ] | [DETAY]
-    4. Eğer grupta hiç önemli haber yoksa SADECE "YOK" yaz. Başka bir şey yazma.
-    """
-
-    # Veri formatı kontrolü (String geldiyse listeye çevir)
-    if isinstance(veriler_listesi, str):
-        try:
-            veriler_listesi = json.loads(veriler_listesi)
-            if isinstance(veriler_listesi, str): # Çift katmanlıysa bir daha
-                veriler_listesi = json.loads(veriler_listesi)
-        except:
-            return "Veri formatı hatası."
-
-    toplam_veri = len(veriler_listesi)
-    print(f"📊 Toplam {toplam_veri} bildirim taranıyor... (Madenci İş Başında)")
-    
-    ham_bulgular_listesi = [] # Madencinin bulduğu altınları buraya atacağız
-    
-    for i in range(0, toplam_veri, PARCA_BOYUTU):
-        grup_ham = veriler_listesi[i : i + PARCA_BOYUTU]
-        grup_no = (i // PARCA_BOYUTU) + 1
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile", temp: float = 0.3):
+        # API Anahtarını al
+        self.api_key = os.getenv("GROQ_API_KEY")
+        if not self.api_key:
+            logger.error("GROQ_API_KEY bulunamadı! Lütfen .env dosyasını kontrol edin.")
+            raise ValueError("Groq API Key eksik.")
+            
+        # Parametreleri ve LLM'i başlat
+        self.chunk_size = 10
+        self.sleep_time = 65
+        self.char_limit = 350
         
-        # Token tasarrufu için metin hazırlığı
-        grup_metin = ""
-        for veri in grup_ham:
-            if isinstance(veri, str): continue
-            
-            icerik = veri.get('icerik', '') or veri.get('summary', '') or ""
-            sirket = veri.get('sirket', '')
-            baslik = veri.get('baslik', '')
-            
-            temiz_icerik = str(icerik).replace('\n', ' ')[:KARAKTER_LIMITI]
-            grup_metin += f"KOD:{sirket} | KONU:{baslik} | DETAY:{temiz_icerik}\n"
+        self.llm = ChatGroq(
+            groq_api_key=self.api_key,
+            model_name=model_name,
+            temperature=temp,
+            max_retries=3
+        )
+        logger.info(f"FinancialLLM başlatıldı. (Model: {model_name})")
 
+    def _mine_data(self, veriler: List[Dict]) -> List[str]:
+        """AŞAMA 1: Verileri parçalar halinde tarar ve ham bulguları çıkarır."""
+        madenci_prompt = """
+        Sen bir Veri Madencisisin. Görevin, verilen KAP bildirimleri arasından sadece kritik olanları ayıklamak.
+        KURALLAR:
+        1. SADECE şu konuları al: Sermaye Artırımı, Temettü, İhale/Yeni İş, Birleşme/Devralma, Geri Alım, Büyük Varlık Satışı.
+        2. YAZMA: Devre kesici, Fon işlemleri, Rutin bildirimler, Borçlanma aracı ihracı vb.
+        3. ÇIKTI FORMATI: Sadece ham veri ver. Süsleme yapma. (Örn: THYAO | YENİ İŞ | 50M$ sözleşme imzaladı)
+        4. Eğer grupta hiç önemli haber yoksa SADECE "YOK" yaz.
+        """
+        
+        toplam_veri = len(veriler)
+        logger.info(f"Toplam {toplam_veri} bildirim taranıyor... (Madenci Modu)")
+        ham_bulgular = []
+        
+        for i in range(0, toplam_veri, self.chunk_size):
+            grup = veriler[i : i + self.chunk_size]
+            grup_no = (i // self.chunk_size) + 1
+            
+            grup_metin = ""
+            for v in grup:
+                icerik = str(v.get('icerik', '')).replace('\n', ' ')[:self.char_limit]
+                grup_metin += f"KOD:{v.get('sirket')} | KONU:{v.get('baslik')} | DETAY:{icerik}\n"
+
+            messages = [
+                ("system", madenci_prompt),
+                ("human", f"LİSTE:\n{grup_metin}"),
+            ]
+            
+            try:
+                cevap = self.llm.invoke(messages).content
+                if "YOK" not in cevap and len(cevap) > 5:
+                    ham_bulgular.append(cevap)
+                    logger.info(f"Parça {grup_no}: Önemli bilgi bulundu.")
+                else:
+                    logger.debug(f"Parça {grup_no}: Boş geçildi.")
+            except Exception as e:
+                logger.error(f"Parça {grup_no} analizi başarısız: {e}")
+                
+            # Rate limit koruması
+            if i + self.chunk_size < toplam_veri:
+                logger.info(f"Kota koruması: {self.sleep_time} saniye bekleniyor...")
+                time.sleep(self.sleep_time)
+                
+        return ham_bulgular
+
+    def _edit_report(self, ham_bulgular: List[str]) -> str:
+        """AŞAMA 2: Madencinin bulduğu verileri birleştirip bülten yazar."""
+        tum_metin = "\n".join(ham_bulgular)
+        
+        editor_prompt = """
+        Sen Borsa İstanbul konusunda uzman bir Bülten Editörüsün.
+        GÖREVİN: Dağınık notları birleştirerek tek, akıcı, profesyonel bir "Gün Sonu Raporu" yazmak.
+        KURALLAR:
+        1. Aynı şirketle ilgili haberleri tek maddede birleştir.
+        2. Kategorilere ayır (💼 YENİ İŞ & İHALELER, 💰 SERMAYE & TEMETTÜ vb.)
+        3. Giriş veya çıkış/selamlama metni yazma. Sadece raporu ver.
+        4. Şirket Kodlarını KALIN yaz.
+        """
+        
         messages = [
-            ("system", madenci_prompt),
-            ("human", f"TARANACAK LİSTE:\n{grup_metin}"),
+            ("system", editor_prompt),
+            ("human", f"GÜNÜN NOTLARI:\n{tum_metin}"),
         ]
         
+        logger.info("Editör Modu: Rapor derleniyor...")
         try:
-            print(f"⛏️  Parça {grup_no} taranıyor...")
-            cevap = llm.invoke(messages).content
-            
-            # Eğer madenci "YOK" demediyse, bulduklarını listeye ekle
-            if "YOK" not in cevap:
-                ham_bulgular_listesi.append(cevap)
-                print(f"💎 Parça {grup_no}: Önemli bilgi bulundu!")
-            else:
-                print(f"System: Parça {grup_no} boş.")
-                
+            return self.llm.invoke(messages).content
         except Exception as e:
-            print(f"⚠️ Hata (Parça {grup_no}): {e}")
+            logger.error(f"Editör aşamasında hata: {e}")
+            return "Rapor derlenirken bir hata oluştu."
+
+    def analyze(self, veriler: List[Dict]) -> str:
+        """Ana fonksiyon: Madenci ve Editör süreçlerini yönetir."""
+        if not veriler:
+            logger.warning("Analiz edilecek veri yok!")
+            return "Bugün KAP'a düşen bildirim bulunmamaktadır."
+            
+        # 1. Aşama
+        bulgular = self._mine_data(veriler)
         
-        # Son parça değilse bekle
-        if i + PARCA_BOYUTU < toplam_veri:
-            print(f"⏳ Kota dolmaması için {BEKLEME_SURESI}sn bekleniyor...")
-            time.sleep(BEKLEME_SURESI)
-
-    # =================================================================
-    # 2. AŞAMA: EDİTÖR (RAPORLAMA)
-    # =================================================================
-    
-    # Eğer hiç bulgu yoksa, boş rapor dön
-    if not ham_bulgular_listesi:
-        return "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir."
-
-    print("\n📝 Editör Modu: Tüm bulgular birleştirilip raporlanıyor...")
-    
-    # Tüm parça parça bulguları tek bir metin haline getir
-    tum_ham_metin = "\n".join(ham_bulgular_listesi)
-    
-    editor_prompt = """
-    Sen Borsa İstanbul konusunda uzman bir Bülten Editörüsün.
-    Elinde, gün içinde toplanmış dağınık haber notları var.
-    
-    GÖREVİN:
-    Bu dağınık notları birleştirerek tek, akıcı, profesyonel bir "Gün Sonu Raporu" yazmak.
-    
-    KURALLAR:
-    1. AYNI ŞİRKETLE İLGİLİ HABERLERİ BİRLEŞTİR: Aynı şirketin birden fazla haberi varsa alt alta yazma, tek maddede özetle.
-    2. KATEGORİLERE AYIR: 
-       - 💼 YENİ İŞ & İHALELER
-       - 💰 SERMAYE & TEMETTÜ
-       - 🤝 BİRLEŞME & SATIN ALMA
-       - 🏭 YATIRIM & AR-GE
-       (Hangi kategoriye uyuyorsa oraya koy)
-    3. EMOJİ KULLAN: Başlıklarda ve maddelerde uygun emojiler kullan.
-    4. TEKRAR ETME: Aynı bilgiyi iki kere yazma.
-    5. GİRİŞ VE ÇIKIŞ METNİ YAZMA: "Merhaba işte rapor", "Saygılar" gibi şeyler yazma. Direkt raporu ver.
-    6. Şirket Kodlarını (THYAO vb.) KALIN yaz.
-    """
-    
-    messages_editor = [
-        ("system", editor_prompt),
-        ("human", f"İŞTE GÜNÜN DAĞINIK NOTLARI:\n{tum_ham_metin}"),
-    ]
-    
-    try:
-        final_rapor = llm.invoke(messages_editor).content
+        if not bulgular:
+            return "Bugün piyasayı etkileyecek kritik bir KAP bildirimi düşmemiştir."
+            
+        # 2. Aşama
+        final_rapor = self._edit_report(bulgular)
+        logger.info("Yapay zeka analizi başarıyla tamamlandı.")
         return final_rapor
-    except Exception as e:
-        return f"HATA (Editör Aşaması): {e}\n\nAMA İŞTE HAM VERİLER:\n{tum_ham_metin}"
-
-# ==========================================
-# TEST BLOĞU
-# ==========================================
-if __name__ == "__main__":
-    print("\n🔬 TEST MODU BAŞLATILIYOR...")
-    
-    TEST_DOSYASI = "kap_verileri_28_01_2026.json" 
-    
-    try:
-        # Dosya yoksa otomatik bul
-        if not os.path.exists(TEST_DOSYASI):
-            json_files = [f for f in os.listdir('.') if f.endswith('.json') and 'kap' in f]
-            if json_files:
-                TEST_DOSYASI = json_files[0]
-                print(f"⚠️ Dosya otomatik seçildi: '{TEST_DOSYASI}'")
-            else:
-                print("❌ HATA: Test edecek .json dosyası bulunamadı!")
-                exit()
-
-        print(f"📂 '{TEST_DOSYASI}' okunuyor...")
-        
-        with open(TEST_DOSYASI, "r", encoding="utf-8") as f:
-            dosya_icerigi = f.read() # Önce hepsini metin olarak oku
-            
-        # JSON'a çevirmeyi dene
-        try:
-            test_verisi = json.loads(dosya_icerigi)
-            
-            # Bazen JSON string içinde string olabilir (Double encoded)
-            if isinstance(test_verisi, str):
-                print("⚠️ Çift katmanlı JSON tespit edildi, tekrar çözülüyor...")
-                test_verisi = json.loads(test_verisi)
-                
-        except json.JSONDecodeError:
-            print("❌ HATA: Dosya geçerli bir JSON değil!")
-            exit()
-            
-        print(f"✅ Dosya başarıyla işlendi. {len(test_verisi)} adet bildirim var.")
-        
-        # Fonksiyonu çalıştır
-        sonuc = llm_response(test_verisi)
-        
-        print("\n" + "="*40)
-        print("🧪 TEST SONUCU (RAPOR):")
-        print("="*40)
-        print(sonuc)
-        print("="*40)
-        
-    except Exception as e:
-        print(f"❌ TEST HATASI DETAYI: {e}")

@@ -30,4 +30,6 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # Eğer RESEND kullanacaksan onun keyini de buraya ekle
-        run: python main.py
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python src/main.py

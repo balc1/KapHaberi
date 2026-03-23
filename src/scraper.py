@@ -3,127 +3,134 @@ import re
 import time
 from typing import List, Dict
 from bs4 import BeautifulSoup
-from datetime import datetime
 
-# Kendi yazdığımız profesyonel logger'ı içeri aktarıyoruz
-from src.logger import setup_logger
+from logger import setup_logger
 
 logger = setup_logger("KapScraper")
 
 class KapScraper:
-    """KAP (Kamuyu Aydınlatma Platformu) üzerinden günlük bildirimleri çeken sınıf."""
+    """KAP'ın YENİ arayüzünden günlük bildirimleri çeken web scraping sınıfı."""
     
     def __init__(self):
-        # Sınıf başlatıldığında gerekli ayarları (Session) hazırla
-        self.base_url = "https://www.kap.org.tr/tr/api/disclosure/list/main"
+        # YENİ KAP URL'si
+        self.sorgu_url = "https://www.kap.org.tr/tr/bildirim-sorgu-sonuc?srcbar=Y&cmp=Y&cat=6&slf=ODA"
         self.detail_url_template = "https://www.kap.org.tr/tr/Bildirim/{id}"
+        
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Origin": "https://www.kap.org.tr",
+            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
         })
-        logger.info("KapScraper modülü başlatıldı.")
+        logger.info("YENİ KapScraper modülü başlatıldı.")
 
-    def _temizle(self, metin: str) -> str:
-        """HTML etiketlerini temizler. Baştaki '_' işareti bunun 'private' bir fonksiyon olduğunu belirtir."""
-        if not metin:
-            return ""
-        metin = metin.replace("<br>", "\n").replace("</p>", "\n").replace("<br/>", "\n")
-        soup = BeautifulSoup(metin, "html.parser")
-        return soup.get_text(separator="\n", strip=True)
-
-    def _bildirim_detayi_al(self, bildirim_id: int) -> str:
-        """Belirli bir bildirimin HTML detay sayfasını kazır."""
+    def _bildirim_detayi_al(self, bildirim_id: str) -> str:
+        """Sadece bildirimin ID'sini kullanarak arka planda detay sayfasına girer ve asıl metni çeker."""
         url = self.detail_url_template.format(id=bildirim_id)
         try:
             response = self.session.get(url, timeout=10)
             if response.status_code != 200:
-                logger.warning(f"Bildirim detayı alınamadı. HTTP {response.status_code} - ID: {bildirim_id}")
+                logger.warning(f"Detay alınamadı. HTTP {response.status_code} - ID: {bildirim_id}")
                 return ""
 
-            html_content = response.text
-            
-            # YÖNTEM 1: JSON Regex
-            match = re.search(r'"disclosureContent"\s*:\s*"(.*?)"', html_content)
-            if match:
-                try:
-                    ham_veri = match.group(1).encode('utf-8').decode('unicode_escape')
-                    temiz = self._temizle(ham_veri)
-                    if len(temiz) > 10: 
-                        return temiz
-                except Exception as e:
-                    logger.debug(f"JSON Decode hatası (ID: {bildirim_id}): {e}")
+            soup = BeautifulSoup(response.text, "html.parser")
 
-            # YÖNTEM 2: BeautifulSoup HTML
-            soup = BeautifulSoup(html_content, "html.parser")
+            # Senin belirttiğin 'expanded-container' alanını dinamik olarak buluyoruz
+            # Bu sayede tablo tr[19] yerine tr[18] olsa bile kod asla patlamaz!
+            container = soup.find(id="expanded-container")
+            if container:
+                # İçindeki tüm metinleri temiz bir şekilde al
+                metin = container.get_text(separator="\n", strip=True)
+                # Fazladan boşlukları temizle
+                return re.sub(r'\n+', '\n', metin)
+
+            # Eğer expanded-container yoksa yedek yöntem (Eski formatlı bildirimler için)
             aranacak_basliklar = ["Ek Açıklamalar", "Açıklamalar", "Açıklama"]
-            
             for baslik_adi in aranacak_basliklar:
-                baslik = soup.find("td", string=re.compile(baslik_adi))
+                baslik = soup.find(["td", "div"], string=re.compile(baslik_adi, re.IGNORECASE))
                 if baslik:
-                    icerik_kutusu = baslik.find_next("td")
+                    icerik_kutusu = baslik.find_next(["td", "div"])
                     if icerik_kutusu:
                         metin = icerik_kutusu.get_text(separator="\n", strip=True)
                         return re.sub(r'\n+', '\n', metin)
 
             return ""
-        except requests.RequestException as e:
-            logger.error(f"Bildirim {bildirim_id} için ağ hatası: {e}")
+        except Exception as e:
+            logger.error(f"Detay çekme hatası (ID: {bildirim_id}): {e}")
             return ""
 
     def gunluk_verileri_getir(self) -> List[Dict]:
-        """Günün KAP bildirimlerini ana API'den çeker ve detaylarıyla birleştirir."""
-        bugun = datetime.now().strftime("%d.%m.%Y")
-        logger.info(f"{bugun} tarihi için KAP verileri toplanıyor...")
-
-        payload = {
-            "fromDate": bugun,
-            "toDate": bugun,
-            "disclosureTypes": ["ODA"],
-            "fundTypes": ["BYF", "GMF", "GSF", "PFF"],
-            "memberTypes": ["IGS", "DDK"],
-            "mkkMemberOid": None
-        }
-        
-        headers_json = self.session.headers.copy()
-        headers_json.update({"Content-Type": "application/json"})
-        
-        try:
-            resp = self.session.post(self.base_url, json=payload, headers=headers_json, timeout=15)
-            resp.raise_for_status() # HTTP hatası varsa exception fırlatır
-            liste_data = resp.json()
-        except Exception as e:
-            logger.error(f"KAP API bağlantı hatası: {e}")
-            return []
-
-        logger.info(f"Toplam {len(liste_data)} bildirim bulundu. Detaylar işleniyor...")
+        """Ana tablodan 'Bugün' olanları filtreler ve verilerini toplar."""
+        logger.info("Yeni KAP adresinden 'Bugün' tarihli bildirimler taranıyor...")
         rapor_listesi = []
 
-        for i, item in enumerate(liste_data, 1):
-            basic = item.get("disclosureBasic", {})
-            b_id = basic.get("disclosureIndex")
-            
-            detay_metni = self._bildirim_detayi_al(b_id)
-            ozet_api = basic.get("summary", "")
-            
-            final_metin = detay_metni if (detay_metni and len(detay_metni) >= 20) else ozet_api
+        try:
+            resp = self.session.get(self.sorgu_url, timeout=15)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
 
-            rapor_listesi.append({
-                "sirket": basic.get("companyTitle", "Bilinmiyor"),
-                "baslik": basic.get("title", "Konu Yok"),
-                "icerik": final_metin
-            })
-            
-            time.sleep(0.3) # Sunucuyu yormamak için limit koruması
-            
-            if i % 20 == 0:
-                logger.info(f"İşlenen bildirim: {i}/{len(liste_data)}")
+            # Ana tabloyu bul
+            tbody = soup.find("tbody")
+            if not tbody:
+                logger.error("Tablo gövdesi (tbody) bulunamadı! Sayfa yapısı değişmiş olabilir.")
+                return []
 
-        logger.info(f"Veri çekme başarıyla tamamlandı. ({len(rapor_listesi)} kayıt)")
-        return rapor_listesi
+            # notification1, notification2... şeklinde giden tüm satırları yakala
+            satirlar = tbody.find_all("tr", id=re.compile(r"notification\d*"))
+            logger.info(f"Sayfada {len(satirlar)} bildirim bulundu. Sadece 'Bugün' olanlar ayıklanıyor...")
 
-# Test etmek için (Sadece bu dosya çalıştırıldığında tetiklenir)
+            for i, satir in enumerate(satirlar, 1):
+                tdler = satir.find_all("td")
+                
+                # Sütunlar eksikse atla
+                if len(tdler) < 8:
+                    continue
+
+                # 1. TARİH KONTROLÜ (Senin ilettiğin //td[3] sütunu)
+                # tdler[2], Python'da 0'dan başladığı için 3. sütuna denk gelir.
+                tarih_metni = tdler[2].get_text(strip=True)
+                if "Bugün" not in tarih_metni:
+                    continue  # Bugün yazmıyorsa bu bildirimi atla!
+
+                # 2. BİLDİRİM ID'SİNİ BULMA (Mucizevi Checkbox yöntemi)
+                checkbox = satir.find("input", type="checkbox")
+                if not checkbox or not checkbox.get("id"):
+                    continue
+                bildirim_id = checkbox.get("id")
+
+                # 3. ŞİRKET KODU (Senin ilettiğin //td[4] sütunu - INVEO)
+                sirket_kodu = tdler[3].get_text(strip=True)
+
+                # 4. BAŞLIK (Senin ilettiğin //td[7] ve //td[8] sütunları birleştiriliyor)
+                ana_baslik = tdler[6].get_text(strip=True)
+                alt_baslik = tdler[7].get_text(strip=True)
+                tam_baslik = f"{ana_baslik} - {alt_baslik}"
+
+                # 5. DETAY METNİ ÇEKME
+                icerik = self._bildirim_detayi_al(bildirim_id)
+                if not icerik or len(icerik) < 10:
+                    icerik = "Özet: " + tam_baslik # Detay boşsa başlığı özet olarak geç
+
+                # Analiz modülünün (analyzer.py) tam beklediği formatta sözlüğe ekle
+                rapor_listesi.append({
+                    "sirket": sirket_kodu,
+                    "baslik": tam_baslik,
+                    "icerik": icerik
+                })
+                
+                # KAP sunucularından ban yememek için her detay sayfasında 0.3 sn bekle
+                time.sleep(0.3)
+
+            logger.info(f"Veri çekme başarıyla tamamlandı. İşlenen 'Bugün' kayıt sayısı: {len(rapor_listesi)}")
+            return rapor_listesi
+
+        except Exception as e:
+            logger.error(f"KAP ana sayfa kazıma hatası: {e}")
+            return []
+
+# Test etmek için direkt dosyayı çalıştırırsan burası tetiklenir:
 if __name__ == "__main__":
     scraper = KapScraper()
     veriler = scraper.gunluk_verileri_getir()
-    print(f"\nÖrnek Çıktı: {veriler[:1] if veriler else 'Veri bulunamadı.'}")
+    print(f"\nÇekilen Bildirim Sayısı: {len(veriler)}")
+    if veriler:
+        print(f"İlk Bildirim Örneği:\n{veriler[0]}")

@@ -46,50 +46,28 @@ graph TD
     J((Cron Job 18:30)) -->|Triggers| K[src/main.py Orchestrator]
     K --> B
     end
+```
 
-
-📂 Project Structure
-Plaintext
-KapHaberi/
-│
-├── src/                    # Source code
-│   ├── __init__.py         
-│   ├── main.py             # Orchestrator tying modules together
-│   ├── scraper.py          # OOP module for web scraping & data extraction
-│   ├── analyzer.py         # 2-stage LLM processing logic (LangChain)
-│   ├── notifier.py         # Telegram API integration with retry mechanisms
-│   └── logger.py           # Standardized application logging
-│
-├── logs/                   # System execution logs (ignored in Git)
-├── requirements.txt        # Dependencies
-├── .env.example            # Environment variables template
-└── README.md               # Project documentation
-
-
-🚀 Setup & Installation
+## 🚀 Setup & Installation
 
 1. Clone the Repository
-Bash
-git clone [https://github.com/YOUR_USERNAME/KapHaberi.git](https://github.com/YOUR_USERNAME/KapHaberi.git)
-cd KapHaberi
+    git clone [https://github.com/YOUR_USERNAME/KapHaberi.git](https://github.com/YOUR_USERNAME/KapHaberi.git)
+    cd KapHaberi
 
 2. Install Dependencies
-Bash
-pip install -r requirements.txt
+    pip install -r requirements.txt
 
 3. Environment Variables
 Create a .env file in the root directory and add your API keys:
 
-Kod snippet'i
 GROQ_API_KEY=gsk_your_groq_api_key
 TELEGRAM_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=@your_channel_name
+TELEGRAM_CHAT_ID=@your_channel_name   
 
 4. Run Locally
-Bash
-python src/main.py
+    python src/main.py
 
-📊 Example Output (Telegram)
+## 📊 Example Output (Telegram)
 The bot outputs a beautifully formatted, categorized daily summary:
 
 📢 Borsa Gün Sonu Raporu | 28.01.2026
@@ -108,8 +86,7 @@ PASIFIK: Tahsisli sermaye artırımı SPK tarafından onaylandı.
 
 (Rutin bildirimler ve devre kesiciler Yapay Zeka tarafından elenmiştir.)
 
-
-🛠️ Tech Stack & Tools
+## 🛠️ Tech Stack & Tools
 Language: Python 3.10+
 
 LLM Framework: LangChain (langchain-core, langchain-groq)
@@ -122,9 +99,8 @@ Automation: GitHub Actions, Make.com (for On-Demand Webhooks)
 
 Type Hinting: Strictly typed for enterprise readiness.
 
-
-👨‍💻 About the Developer
-I am a Freelance AI Engineer & Full-Stack Developer specializing in building Intelligent Apps, AI Agents, and automated data pipelines.
+## 👨‍💻 About the Developer
+I am a Freelance AI Engineer & Full-Stack Developer | Intelligent Apps • AI Agents • Data specializing in building scalable AI architectures, advanced agent systems, and automated data pipelines.
 
 Let's connect: [LinkedIn Profile URL]
 
@@ -132,4 +108,4 @@ Hire me on Upwork: [Upwork Profile URL]
 
 Portfolio: [Your Personal Website URL]
 
-If you found this project interesting or helpful, please consider giving it a ⭐!
+If you found this project interesting or helpful, please consider giving it a ⭐!   

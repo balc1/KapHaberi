@@ -23,6 +23,9 @@ class TelegramNotifier:
 
     def send(self, baslik: str, mesaj_metni: str) -> bool:
         """Mesajı gerektiğinde parçalara bölerek Telegram'a gönderir."""
+        # Telegram legacy Markdown çift yıldızı (**) render etmez ve isteği bozar.
+        # LLM yine de ** ürettiyse tek yıldıza (*) çevirerek biçimi koru.
+        mesaj_metni = mesaj_metni.replace("**", "*")
         tam_mesaj = f"📢 *{baslik}*\n\n{mesaj_metni}"
         limit = 4000
         

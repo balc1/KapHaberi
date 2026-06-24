@@ -15,10 +15,16 @@ from src.notifier import TelegramNotifier
 logger = setup_logger("Orchestrator")
 
 def main():
-    logger.info("=== KAP AI Analiz Botu Başlatılıyor ===")
-    
+    # Çalışma modu: komut satırından (örn. "python src/main.py gun_ortasi").
+    # Varsayılan: gun_sonu. Geçerli: gun_sonu | gun_ortasi
+    mode = sys.argv[1] if len(sys.argv) > 1 else "gun_sonu"
+    if mode not in ("gun_sonu", "gun_ortasi"):
+        mode = "gun_sonu"
+
+    logger.info(f"=== KAP AI Analiz Botu Başlatılıyor (mod: {mode}) ===")
+
     # Çevresel değişkenleri (.env) yükle
-    load_dotenv() 
+    load_dotenv()
 
     try:
         # 1. Modülleri Başlat (Sınıflardan nesneler üretiyoruz)
@@ -40,7 +46,10 @@ def main():
 
         # 4. Bildirim Aşaması
         bugun_str = datetime.now().strftime("%d.%m.%Y")
-        baslik = f"Borsa Gün Sonu Raporu | {bugun_str}"
+        if mode == "gun_ortasi":
+            baslik = f"Borsa Gün Ortası Özeti | {bugun_str}"
+        else:
+            baslik = f"Borsa Gün Sonu Raporu | {bugun_str}"
         
         basari = notifier.send(baslik, rapor)
         
